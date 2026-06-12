@@ -1,70 +1,112 @@
-# NFT Sales X Bot (Multi-Collection, Multi-Marketplace)
+# NFT Sales Bot
 
-A self-hosted bot that watches NFT sales for **multiple Ethereum collections** across all major marketplaces (OpenSea, Blur, LooksRare, X2Y2, 0x Protocol) and tweets each sale from a single X account. Collections are managed through a built-in, password-protected web dashboard.
+A self-hosted bot that watches NFT sales and mints for **multiple Ethereum collections** across all major marketplaces and tweets each one from a single X account. Collections are managed through a password-protected web dashboard.
 
-Sales data comes from Moralis' [NFT Trades API](https://docs.moralis.com/web3-data-api/evm/reference/get-nft-trades), which indexes trades across marketplaces — no contract ABIs or log decoding required.
+Built by [dinamic.eth](https://dinamic.eth.limo) · [@Pixel_Goblins](https://x.com/Pixel_Goblins) · [@goblinarinos](https://x.com/goblinarinos)
+
+---
 
 ## Features
 
-- Track any number of collections, managed from a web UI (add / remove / pause / min-price filter)
-- Covers OpenSea, Blur, LooksRare, X2Y2 and 0x Protocol
-- Tweets include token image, price in ETH + USD, marketplace, buyer/seller and links
-- Sweeps (multiple tokens bought in one transaction) are grouped into a single tweet
+- Track any number of collections — add, pause, remove, set min-price filters from the dashboard
+- Covers **OpenSea, Blur, LooksRare, X2Y2 and 0x Protocol**
+- Tweets include token image (OpenSea card), price in ETH + USD, marketplace, buyer/seller
+- **ENS reverse lookup** — buyer/seller addresses resolved to `.eth` names when available
+- **Mints tracking** — toggle per collection from the dashboard
+- Sweeps grouped into a single tweet
+- Per-collection **phrase rotation** — custom phrases prepended to each tweet
+- Liquid glass dashboard UI with video background
 - SQLite storage — no external database needed
-- Dedupe protection across restarts (never double-posts a sale)
+- Dedup protection across restarts — never double-posts
+
+---
 
 ## Requirements
 
 - Node.js 20+
-- A [Moralis](https://moralis.com) Web3 Data API key (free tier works; keep `POLL_INTERVAL_SECONDS` at 600 to stay within it)
-- An [X Developer App](https://developer.twitter.com/) with **Read and Write** permissions, plus the access token & secret for the account that should post
+- [Moralis](https://moralis.com) Web3 Data API key (free tier works — keep `POLL_INTERVAL_SECONDS` at 600)
+- [X Developer App](https://developer.twitter.com/) with **Read and Write** permissions + access token & secret
+
+---
 
 ## Setup
 
 ```sh
 npm install
-cp .env.example .env   # then fill in your keys
+cp .env.example .env   # fill in your keys
 npm run build
 npm start
 ```
 
-Open `http://localhost:3000`, log in with your `ADMIN_PASSWORD`, and add collections by name + contract address. New collections start tracking from the current block (no backfill of old sales).
+Open `http://localhost:3000`, log in with your `ADMIN_PASSWORD`, and add collections by name + contract address.
 
-For development: `npm run dev` (auto-reloads). Set `DRY_RUN=true` in `.env` to log tweets to the console instead of posting.
+For development: `npm run dev` (auto-reloads). Set `DRY_RUN=true` to log tweets to the console instead of posting.
 
-## Deployment (VPS / Railway)
+### Environment variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `MORALIS_API_KEY` | Yes | Web3 Data API key from moralis.com |
+| `X_CONSUMER_KEY` | Yes | X app consumer key |
+| `X_CONSUMER_SECRET` | Yes | X app consumer secret |
+| `X_ACCESS_TOKEN` | Yes | X account access token |
+| `X_ACCESS_SECRET` | Yes | X account access secret |
+| `ADMIN_PASSWORD` | Yes | Dashboard login password |
+| `POLL_INTERVAL_SECONDS` | No | Polling interval (default: 600) |
+| `DRY_RUN` | No | Log tweets instead of posting (default: false) |
+
+---
+
+## Deployment
+
+### Docker Compose (recommended)
+
+```yaml
+services:
+  nft-sales-bot:
+    image: nft-sales-bot:latest
+    build: .
+    container_name: nft-sales-bot
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+```
+
+```sh
+docker compose up -d --build
+```
 
 ### Docker
 
 ```sh
-docker build -t nft-sales-x-bot .
-docker run -d --name sales-bot \
+docker build -t nft-sales-bot .
+docker run -d --name nft-sales-bot \
   --env-file .env \
   -p 3000:3000 \
-  -v sales-bot-data:/app/data \
+  -v nft-sales-bot-data:/app/data \
   --restart unless-stopped \
-  nft-sales-x-bot
+  nft-sales-bot
 ```
 
-The SQLite database lives in `/app/data` — keep it on a volume so collections and dedupe state survive restarts.
+The SQLite database lives in `/app/data` — mount a volume to persist collections and dedup state across restarts.
 
 ### Railway
 
-- Create a new project from this repo (the `Dockerfile` is picked up automatically)
-- Add the variables from `.env.example` in the service settings
+- Create a new project from this repo (Dockerfile is picked up automatically)
+- Add variables from `.env.example` in the service settings
 - Attach a volume mounted at `/app/data`
 
-### Bare VPS (pm2)
-
-```sh
-npm install && npm run build
-pm2 start dist/index.js --name sales-bot
-pm2 save
-```
+---
 
 ## X API rate limits
 
-All collections tweet from one X account. The X API **free tier allows ~500 posts/month (~17/day)** shared across all collections. If your collections trade more than that, either set per-collection min-price filters in the dashboard or upgrade to the Basic tier.
+All collections tweet from one X account. The free tier allows ~500 posts/month (~17/day). If your collections trade heavily, set per-collection min-price filters in the dashboard or upgrade to the Basic tier.
+
+---
 
 ## License
 
