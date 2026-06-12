@@ -103,6 +103,22 @@ function shortAddress(address) {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
 
+function makePill(label, active, clickable, onClick) {
+  const pill = document.createElement("span");
+  pill.className = `track-pill ${active ? "on" : "off"}${clickable ? " clickable" : ""}`;
+  const dot = document.createElement("span");
+  dot.className = "track-pill-dot";
+  pill.appendChild(dot);
+  pill.appendChild(document.createTextNode(label));
+  if (clickable && onClick) {
+    pill.title = active
+      ? `${label} tracked. Click to disable.`
+      : `${label} ignored. Click to enable.`;
+    pill.addEventListener("click", onClick);
+  }
+  return pill;
+}
+
 function renderCollections(collections) {
   const table = $("collections-table");
   const empty = $("empty-state");
@@ -120,15 +136,18 @@ function renderCollections(collections) {
   for (const col of collections) {
     const tr = document.createElement("tr");
 
+    // Status
     const statusTd = document.createElement("td");
     const badge = document.createElement("span");
     badge.className = `status-badge ${col.paused ? "status-paused" : "status-active"}`;
     badge.textContent = col.paused ? "Paused" : "Active";
     statusTd.appendChild(badge);
 
+    // Name
     const nameTd = document.createElement("td");
     nameTd.textContent = col.name;
 
+    // Contract
     const contractTd = document.createElement("td");
     contractTd.className = "contract";
     const link = document.createElement("a");
@@ -139,6 +158,7 @@ function renderCollections(collections) {
     link.title = col.contract_address;
     contractTd.appendChild(link);
 
+    // Min price
     const priceTd = document.createElement("td");
     const priceInput = document.createElement("input");
     priceInput.type = "number";
@@ -146,7 +166,7 @@ function renderCollections(collections) {
     priceInput.step = "any";
     priceInput.className = "min-price-input";
     priceInput.value = col.min_price_eth || 0;
-    priceInput.title = "Only tweet sales at or above this price (0 = all sales)";
+    priceInput.title = "Only tweet sales at or above this price (0 = all)";
     priceInput.addEventListener("change", async () => {
       const value = Number(priceInput.value);
       if (!Number.isFinite(value) || value < 0) {
@@ -165,14 +185,13 @@ function renderCollections(collections) {
     });
     priceTd.appendChild(priceInput);
 
-    const mintsTd = document.createElement("td");
-    const mintsBtn = document.createElement("button");
-    mintsBtn.className = "btn btn-sm";
-    mintsBtn.textContent = col.track_mints ? "On" : "Off";
-    mintsBtn.title = col.track_mints
-      ? "Mints from the contract are tweeted. Click to disable."
-      : "Mints are ignored. Click to enable.";
-    mintsBtn.addEventListener("click", async () => {
+    // Tracking pills
+    const trackingTd = document.createElement("td");
+    const pills = document.createElement("div");
+    pills.className = "tracking-pills";
+
+    const salesPill = makePill("Sales", !col.paused, false, null);
+    const mintsPill = makePill("Mints", !!col.track_mints, true, async () => {
       try {
         await api(`/api/collections/${col.id}`, {
           method: "PATCH",
@@ -183,27 +202,25 @@ function renderCollections(collections) {
         alert(err.message);
       }
     });
-    mintsTd.appendChild(mintsBtn);
 
+    pills.append(salesPill, mintsPill);
+    trackingTd.appendChild(pills);
+
+    // Phrases
     const phrasesTd = document.createElement("td");
     let phraseCount = 0;
     try {
       const parsed = JSON.parse(col.phrases || "[]");
       if (Array.isArray(parsed)) phraseCount = parsed.length;
-    } catch {
-      /* ignore */
-    }
+    } catch { /* ignore */ }
     const phrasesBtn = document.createElement("button");
     phrasesBtn.className = "btn btn-sm";
-    phrasesBtn.textContent = phraseCount > 0 ? `Edit (${phraseCount})` : "Add";
+    phrasesBtn.textContent = phraseCount > 0 ? `${phraseCount} phrases` : "Add phrases";
     phrasesBtn.title = "Custom phrases rotated on each sale tweet";
     phrasesBtn.addEventListener("click", () => openPhrasesModal(col));
     phrasesTd.appendChild(phrasesBtn);
 
-    const addedTd = document.createElement("td");
-    addedTd.className = "muted";
-    addedTd.textContent = (col.created_at || "").slice(0, 10);
-
+    // Actions
     const actionsTd = document.createElement("td");
     const actions = document.createElement("div");
     actions.className = "row-actions";
@@ -239,7 +256,7 @@ function renderCollections(collections) {
     actions.append(pauseBtn, deleteBtn);
     actionsTd.appendChild(actions);
 
-    tr.append(statusTd, nameTd, contractTd, priceTd, mintsTd, phrasesTd, addedTd, actionsTd);
+    tr.append(statusTd, nameTd, contractTd, priceTd, trackingTd, phrasesTd, actionsTd);
     body.appendChild(tr);
   }
 }
@@ -255,9 +272,7 @@ function openPhrasesModal(col) {
   try {
     const parsed = JSON.parse(col.phrases || "[]");
     if (Array.isArray(parsed)) phrases = parsed;
-  } catch {
-    /* ignore */
-  }
+  } catch { /* ignore */ }
   $("phrases-text").value = phrases.join("\n");
   $("phrases-error").classList.add("hidden");
   $("phrases-modal").classList.remove("hidden");

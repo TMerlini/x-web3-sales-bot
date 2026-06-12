@@ -4,12 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>NFT Sales Bot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <!-- Login overlay -->
+
   <div id="login-view" class="login-view hidden">
-    <div class="login-card">
+    <div class="login-card liquid-glass">
       <div class="logo">
         <span class="logo-dot"></span>
         <h1>NFT Sales Bot</h1>
@@ -23,7 +26,6 @@
     </div>
   </div>
 
-  <!-- Dashboard -->
   <div id="app-view" class="app hidden">
     <header>
       <div class="logo">
@@ -40,7 +42,7 @@
     </header>
 
     <main>
-      <section class="card">
+      <section class="card liquid-glass">
         <h2>Add collection</h2>
         <form id="add-form" class="add-form">
           <div class="field">
@@ -60,7 +62,7 @@
         <p id="add-error" class="error hidden"></p>
       </section>
 
-      <section class="card">
+      <section class="card liquid-glass">
         <h2>Collections</h2>
         <div id="empty-state" class="empty hidden">
           <p>No collections yet. Add one above to start tweeting sales.</p>
@@ -71,10 +73,9 @@
               <th>Status</th>
               <th>Name</th>
               <th>Contract</th>
-              <th>Min price (ETH)</th>
-              <th>Mints</th>
+              <th>Min ETH</th>
+              <th>Tracking</th>
               <th>Phrases</th>
-              <th>Added</th>
               <th></th>
             </tr>
           </thead>
@@ -86,18 +87,48 @@
         Sales across OpenSea, Blur, LooksRare, X2Y2 &amp; CryptoPunks are tweeted from one X account.
         New collections start tracking from the current block.
       </p>
+
+      <section class="card liquid-glass setup-card">
+        <h2>Setup</h2>
+        <p class="muted setup-intro">Configure your <code>.env</code> file before first run. All values are required unless marked optional.</p>
+        <div class="env-list">
+          <div class="env-row">
+            <div class="env-key">MORALIS_API_KEY</div>
+            <div class="env-desc">Web3 Data API key from <a href="https://moralis.com" target="_blank" rel="noopener">moralis.com</a>. Free tier works — keep <code>POLL_INTERVAL_SECONDS</code> at 600 to stay within rate limits.</div>
+          </div>
+          <div class="env-row">
+            <div class="env-key">X_CONSUMER_KEY<br/>X_CONSUMER_SECRET</div>
+            <div class="env-desc">App credentials from <a href="https://developer.twitter.com/en/portal/projects-and-apps" target="_blank" rel="noopener">X Developer Portal</a>. The app must have <strong>Read and Write</strong> permissions.</div>
+          </div>
+          <div class="env-row">
+            <div class="env-key">X_ACCESS_TOKEN<br/>X_ACCESS_SECRET</div>
+            <div class="env-desc">Access token and secret for the X account that will post. Generate these under <em>Keys and Tokens</em> in the Developer Portal.</div>
+          </div>
+          <div class="env-row">
+            <div class="env-key">ADMIN_PASSWORD</div>
+            <div class="env-desc">Password for this dashboard. Choose something strong — there is no second factor.</div>
+          </div>
+          <div class="env-row env-row-optional">
+            <div class="env-key">POLL_INTERVAL_SECONDS<span class="optional-tag">optional</span></div>
+            <div class="env-desc">How often to poll for new sales. Default: <code>600</code>. Lower values consume more Moralis API quota. Free tier: keep at 600+.</div>
+          </div>
+          <div class="env-row env-row-optional">
+            <div class="env-key">DRY_RUN<span class="optional-tag">optional</span></div>
+            <div class="env-desc">Set to <code>true</code> on first run to log tweets to console instead of posting. Toggle live/dry mode from the header once running.</div>
+          </div>
+        </div>
+      </section>
     </main>
   </div>
 
-  <!-- Phrases editor modal -->
   <div id="phrases-modal" class="modal-overlay hidden">
-    <div class="modal">
+    <div class="modal liquid-glass">
       <h3 id="phrases-title">Phrases</h3>
       <p class="muted">
-        One phrase per line. They rotate in order — one phrase is added to the top of each sale
-        tweet. Leave empty for plain tweets.
+        One phrase per line. They rotate in order — one phrase is prepended to each sale tweet.
+        Leave empty for plain tweets.
       </p>
-      <textarea id="phrases-text" rows="8" placeholder="Another goblin finds a home!&#10;Goblin gone.&#10;One of 10,000 on-chain goblins just moved."></textarea>
+      <textarea id="phrases-text" rows="8" placeholder="Gobbos on the move.&#10;Gmussy found a new home.&#10;Dassit."></textarea>
       <p id="phrases-error" class="error hidden"></p>
       <div class="modal-actions">
         <button id="phrases-cancel" class="btn">Cancel</button>

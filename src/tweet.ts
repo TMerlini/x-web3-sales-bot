@@ -71,7 +71,9 @@ export function formatTweet(
   group: SaleGroup,
   metadata: TokenMetadata,
   ethUsd: number | null,
-  phrase: string | null
+  phrase: string | null,
+  buyerEns?: string,
+  sellerEns?: string
 ): string {
   const market = marketplaceLabel(group.marketplace);
   const isMint = group.marketplace === "mint";
@@ -89,8 +91,8 @@ export function formatTweet(
       ? `${name} minted${priceText}`
       : `${name} sold${priceText} on ${market}`;
     const parties = isMint
-      ? `Minter: ${shortAddress(group.buyerAddress)}`
-      : `${shortAddress(group.sellerAddress)} → ${shortAddress(group.buyerAddress)}`;
+      ? `Minter: ${buyerEns || shortAddress(group.buyerAddress)}`
+      : `${sellerEns || shortAddress(group.sellerAddress)} → ${buyerEns || shortAddress(group.buyerAddress)}`;
     return [...lead, headline, ``, parties, ``, link].join("\n");
   }
 
@@ -101,7 +103,7 @@ export function formatTweet(
     ...lead,
     headline,
     ``,
-    `${isMint ? "Minter" : "Buyer"}: ${shortAddress(group.buyerAddress)}`,
+    `${isMint ? "Minter" : "Buyer"}: ${buyerEns || shortAddress(group.buyerAddress)}`,
     ``,
     `https://etherscan.io/tx/${group.txHash}`,
   ].join("\n");

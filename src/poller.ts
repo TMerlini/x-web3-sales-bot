@@ -4,6 +4,7 @@ import {
   getTokenMetadata,
   getTradesSince,
   TokenMetadata,
+  resolveEnsName,
 } from "./moralis";
 import {
   Collection,
@@ -59,14 +60,16 @@ async function processCollection(collection: Collection, currentBlock: number): 
       return;
     }
 
-    const [metadata, ethUsd] = await Promise.all([
+    const [metadata, ethUsd, buyerEns, sellerEns] = await Promise.all([
       group.tokenIds.length > 0
         ? getTokenMetadata(collection.contract_address, group.tokenIds[0])
         : Promise.resolve<TokenMetadata>({}),
       getEthUsdPrice(),
+      resolveEnsName(group.buyerAddress),
+      resolveEnsName(group.sellerAddress),
     ]);
 
-    const text = formatTweet(collection, group, metadata, ethUsd, nextPhrase(collection));
+    const text = formatTweet(collection, group, metadata, ethUsd, nextPhrase(collection), buyerEns, sellerEns);
 
     try {
       await postTweet(text, metadata.imageUrl);

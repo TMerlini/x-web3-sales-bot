@@ -254,3 +254,16 @@ export function marketplaceLabel(marketplace: string): string {
       return marketplace || "Unknown";
   }
 }
+
+/** Reverse-resolve an Ethereum address to its ENS name. Returns undefined if none. */
+export async function resolveEnsName(address: string): Promise<string | undefined> {
+  if (!address) return undefined;
+  try {
+    const data = await fetchJson<{ name?: string }>(
+      `${BASE}/resolve/${address}/reverse?chain=eth`
+    );
+    return data.name || undefined;
+  } catch {
+    return undefined;
+  }
+}
