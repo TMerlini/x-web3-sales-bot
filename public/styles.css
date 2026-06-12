@@ -16,7 +16,11 @@
 body {
   font-family: var(--font-body);
   font-weight: 400;
-  background: var(--bg);
+  background-color: var(--bg);
+  background-image: url('https://sapphire-naval-quelea-174.mypinata.cloud/ipfs/bafybeicslgoegftxiancg5aolexrdreoedy7raix7fxdrvmjqfptd5taza');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
   color: var(--text);
   min-height: 100vh;
 }
