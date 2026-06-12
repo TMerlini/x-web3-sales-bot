@@ -1,0 +1,28 @@
+{
+  "name": "nft-sales-x-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "X bot that tweets NFT sales for multiple collections across OpenSea, Blur, LooksRare, X2Y2 and more",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.10.0",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "twitter-api-v2": "^1.29.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.9.3",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  }
+}

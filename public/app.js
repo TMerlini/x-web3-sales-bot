@@ -1,0 +1,335 @@
+const $ = (id) => document.getElementById(id);
+
+const loginView = $("login-view");
+const appView = $("app-view");
+
+async function api(path, options = {}) {
+  const res = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  if (res.status === 401) {
+    showLogin();
+    throw new Error("Unauthorized");
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  return data;
+}
+
+function showLogin() {
+  loginView.classList.remove("hidden");
+  appView.classList.add("hidden");
+}
+
+function showApp() {
+  loginView.classList.add("hidden");
+  appView.classList.remove("hidden");
+  loadCollections();
+  loadMode();
+}
+
+// --- Auth ---
+
+$("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const errorEl = $("login-error");
+  errorEl.classList.add("hidden");
+  try {
+    await api("/api/login", {
+      method: "POST",
+      body: JSON.stringify({ password: $("login-password").value }),
+    });
+    $("login-password").value = "";
+    showApp();
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.classList.remove("hidden");
+  }
+});
+
+$("logout-btn").addEventListener("click", async () => {
+  await api("/api/logout", { method: "POST" }).catch(() => {});
+  showLogin();
+});
+
+// --- Dry run / live mode toggle ---
+
+let currentDryRun = true;
+
+function renderMode() {
+  const pill = $("mode-toggle");
+  pill.classList.toggle("mode-dry", currentDryRun);
+  pill.classList.toggle("mode-live", !currentDryRun);
+  $("mode-label").textContent = currentDryRun ? "Dry run" : "Live";
+  pill.title = currentDryRun
+    ? "Dry run: tweets are only logged to the console. Click to go live."
+    : "Live: tweets are posted to X. Click to switch to dry run.";
+}
+
+async function loadMode() {
+  try {
+    const { dryRun } = await api("/api/settings");
+    currentDryRun = dryRun;
+    renderMode();
+  } catch {
+    /* 401 already handled */
+  }
+}
+
+$("mode-toggle").addEventListener("click", async () => {
+  const goingLive = currentDryRun;
+  if (
+    goingLive &&
+    !confirm("Go LIVE? Sales will be posted to X for real from now on.")
+  ) {
+    return;
+  }
+  try {
+    const { dryRun } = await api("/api/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ dryRun: !currentDryRun }),
+    });
+    currentDryRun = dryRun;
+    renderMode();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+// --- Collections ---
+
+function shortAddress(address) {
+  return `${address.slice(0, 6)}…${address.slice(-4)}`;
+}
+
+function renderCollections(collections) {
+  const table = $("collections-table");
+  const empty = $("empty-state");
+  const body = $("collections-body");
+  body.innerHTML = "";
+
+  if (collections.length === 0) {
+    table.classList.add("hidden");
+    empty.classList.remove("hidden");
+    return;
+  }
+  table.classList.remove("hidden");
+  empty.classList.add("hidden");
+
+  for (const col of collections) {
+    const tr = document.createElement("tr");
+
+    const statusTd = document.createElement("td");
+    const badge = document.createElement("span");
+    badge.className = `status-badge ${col.paused ? "status-paused" : "status-active"}`;
+    badge.textContent = col.paused ? "Paused" : "Active";
+    statusTd.appendChild(badge);
+
+    const nameTd = document.createElement("td");
+    nameTd.textContent = col.name;
+
+    const contractTd = document.createElement("td");
+    contractTd.className = "contract";
+    const link = document.createElement("a");
+    link.href = `https://etherscan.io/address/${col.contract_address}`;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = shortAddress(col.contract_address);
+    link.title = col.contract_address;
+    contractTd.appendChild(link);
+
+    const priceTd = document.createElement("td");
+    const priceInput = document.createElement("input");
+    priceInput.type = "number";
+    priceInput.min = "0";
+    priceInput.step = "any";
+    priceInput.className = "min-price-input";
+    priceInput.value = col.min_price_eth || 0;
+    priceInput.title = "Only tweet sales at or above this price (0 = all sales)";
+    priceInput.addEventListener("change", async () => {
+      const value = Number(priceInput.value);
+      if (!Number.isFinite(value) || value < 0) {
+        priceInput.value = col.min_price_eth || 0;
+        return;
+      }
+      try {
+        await api(`/api/collections/${col.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ minPriceEth: value }),
+        });
+      } catch (err) {
+        alert(err.message);
+        priceInput.value = col.min_price_eth || 0;
+      }
+    });
+    priceTd.appendChild(priceInput);
+
+    const mintsTd = document.createElement("td");
+    const mintsBtn = document.createElement("button");
+    mintsBtn.className = "btn btn-sm";
+    mintsBtn.textContent = col.track_mints ? "On" : "Off";
+    mintsBtn.title = col.track_mints
+      ? "Mints from the contract are tweeted. Click to disable."
+      : "Mints are ignored. Click to enable.";
+    mintsBtn.addEventListener("click", async () => {
+      try {
+        await api(`/api/collections/${col.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ trackMints: !col.track_mints }),
+        });
+        loadCollections();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+    mintsTd.appendChild(mintsBtn);
+
+    const phrasesTd = document.createElement("td");
+    let phraseCount = 0;
+    try {
+      const parsed = JSON.parse(col.phrases || "[]");
+      if (Array.isArray(parsed)) phraseCount = parsed.length;
+    } catch {
+      /* ignore */
+    }
+    const phrasesBtn = document.createElement("button");
+    phrasesBtn.className = "btn btn-sm";
+    phrasesBtn.textContent = phraseCount > 0 ? `Edit (${phraseCount})` : "Add";
+    phrasesBtn.title = "Custom phrases rotated on each sale tweet";
+    phrasesBtn.addEventListener("click", () => openPhrasesModal(col));
+    phrasesTd.appendChild(phrasesBtn);
+
+    const addedTd = document.createElement("td");
+    addedTd.className = "muted";
+    addedTd.textContent = (col.created_at || "").slice(0, 10);
+
+    const actionsTd = document.createElement("td");
+    const actions = document.createElement("div");
+    actions.className = "row-actions";
+
+    const pauseBtn = document.createElement("button");
+    pauseBtn.className = "btn btn-sm";
+    pauseBtn.textContent = col.paused ? "Resume" : "Pause";
+    pauseBtn.addEventListener("click", async () => {
+      try {
+        await api(`/api/collections/${col.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ paused: !col.paused }),
+        });
+        loadCollections();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "btn btn-sm btn-danger";
+    deleteBtn.textContent = "Delete";
+    deleteBtn.addEventListener("click", async () => {
+      if (!confirm(`Stop tracking "${col.name}"?`)) return;
+      try {
+        await api(`/api/collections/${col.id}`, { method: "DELETE" });
+        loadCollections();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+
+    actions.append(pauseBtn, deleteBtn);
+    actionsTd.appendChild(actions);
+
+    tr.append(statusTd, nameTd, contractTd, priceTd, mintsTd, phrasesTd, addedTd, actionsTd);
+    body.appendChild(tr);
+  }
+}
+
+// --- Phrases modal ---
+
+let phrasesCollectionId = null;
+
+function openPhrasesModal(col) {
+  phrasesCollectionId = col.id;
+  $("phrases-title").textContent = `Phrases — ${col.name}`;
+  let phrases = [];
+  try {
+    const parsed = JSON.parse(col.phrases || "[]");
+    if (Array.isArray(parsed)) phrases = parsed;
+  } catch {
+    /* ignore */
+  }
+  $("phrases-text").value = phrases.join("\n");
+  $("phrases-error").classList.add("hidden");
+  $("phrases-modal").classList.remove("hidden");
+  $("phrases-text").focus();
+}
+
+function closePhrasesModal() {
+  $("phrases-modal").classList.add("hidden");
+  phrasesCollectionId = null;
+}
+
+$("phrases-cancel").addEventListener("click", closePhrasesModal);
+$("phrases-modal").addEventListener("click", (e) => {
+  if (e.target === $("phrases-modal")) closePhrasesModal();
+});
+
+$("phrases-save").addEventListener("click", async () => {
+  if (phrasesCollectionId === null) return;
+  const phrases = $("phrases-text")
+    .value.split("\n")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  try {
+    await api(`/api/collections/${phrasesCollectionId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ phrases }),
+    });
+    closePhrasesModal();
+    loadCollections();
+  } catch (err) {
+    const errorEl = $("phrases-error");
+    errorEl.textContent = err.message;
+    errorEl.classList.remove("hidden");
+  }
+});
+
+async function loadCollections() {
+  try {
+    renderCollections(await api("/api/collections"));
+  } catch {
+    /* 401 already handled */
+  }
+}
+
+$("add-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const errorEl = $("add-error");
+  errorEl.classList.add("hidden");
+  try {
+    await api("/api/collections", {
+      method: "POST",
+      body: JSON.stringify({
+        name: $("add-name").value.trim(),
+        contractAddress: $("add-address").value.trim(),
+        minPriceEth: Number($("add-min-price").value) || 0,
+      }),
+    });
+    $("add-form").reset();
+    loadCollections();
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.classList.remove("hidden");
+  }
+});
+
+// --- Init ---
+
+(async () => {
+  try {
+    const { authed } = await fetch("/api/session").then((r) => r.json());
+    authed ? showApp() : showLogin();
+  } catch {
+    showLogin();
+  }
+})();
