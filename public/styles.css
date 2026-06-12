@@ -568,6 +568,52 @@ textarea::placeholder { color: var(--text-muted); }
 .env-desc strong { color: rgba(255,255,255,0.65); font-weight: 600; }
 .env-desc em { font-style: italic; }
 
+/* By pill */
+.by-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.18rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  font-family: var(--font-body);
+  letter-spacing: 0.04em;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 0.15s, border-color 0.15s;
+}
+.by-pill:hover {
+  color: var(--text);
+  border-color: rgba(255,255,255,0.22);
+}
+
+/* Footer */
+.site-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 1.5rem 1rem 2.5rem;
+  font-size: 0.78rem;
+}
+
+.footer-sep { color: var(--text-muted); opacity: 0.4; }
+
+.footer-link {
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+.footer-link:hover { color: var(--text); }
+
+.footer-x {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
 @media (max-width: 720px) {
   table thead { display: none; }
   table, tbody, tr, td { display: block; width: 100%; }
