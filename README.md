@@ -1,6 +1,6 @@
 # NFT Sales Bot
 
-A self-hosted bot that watches NFT sales and mints for **multiple Ethereum collections** across all major marketplaces and tweets each one from a single X account. Collections are managed through a password-protected web dashboard.
+A self-hosted bot that watches NFT sales and mints for **multiple Ethereum collections** across all major marketplaces and tweets each one from a single X account. Collections — and which marketplaces to watch and how often to poll — are managed through a password-protected web dashboard.
 
 Built by [dinamic.eth](https://dinamic.eth.limo) · [@Pixel_Goblins](https://x.com/Pixel_Goblins) · [@goblinarinos](https://x.com/goblinarinos)
 
@@ -9,7 +9,8 @@ Built by [dinamic.eth](https://dinamic.eth.limo) · [@Pixel_Goblins](https://x.c
 ## Features
 
 - Track any number of collections — add, pause, remove, set min-price filters from the dashboard
-- Covers **OpenSea, Blur, LooksRare, X2Y2 and 0x Protocol**
+- **Choose which marketplaces to track** (OpenSea, Blur, LooksRare, X2Y2, 0x Protocol) live from the dashboard — fewer marketplaces means less Moralis quota per poll
+- **Adjustable poll interval** from the dashboard (60–86400s), applied on the next cycle with no restart
 - Tweets include token image (OpenSea card), price in ETH + USD, marketplace, buyer/seller
 - **ENS reverse lookup** — buyer/seller addresses resolved to `.eth` names when available
 - **Mints tracking** — toggle per collection from the dashboard
@@ -24,7 +25,7 @@ Built by [dinamic.eth](https://dinamic.eth.limo) · [@Pixel_Goblins](https://x.c
 ## Requirements
 
 - Node.js 20+
-- [Moralis](https://moralis.com) Web3 Data API key (free tier works — keep `POLL_INTERVAL_SECONDS` at 600)
+- [Moralis](https://moralis.com) Web3 Data API key (free tier works — trim the marketplace list and raise the poll interval from the dashboard to stay within the free quota)
 - [X Developer App](https://developer.twitter.com/) with **Read and Write** permissions + access token & secret
 
 ---
@@ -42,6 +43,12 @@ Open `http://localhost:3000`, log in with your `ADMIN_PASSWORD`, and add collect
 
 For development: `npm run dev` (auto-reloads). Set `DRY_RUN=true` to log tweets to the console instead of posting.
 
+### Dashboard
+
+- **Collections** — add, pause, delete, set a per-collection min-price filter, toggle mint tracking, and define rotating phrases.
+- **Bot settings** — tick the marketplaces to watch and set the poll interval. Both are stored in SQLite (in the `/app/data` volume), so they persist across restarts and image rebuilds; `POLL_INTERVAL_SECONDS` only seeds the initial value on first run, after which the dashboard owns it.
+- **Mode** — a header toggle switches between dry-run (logged to console) and live (posted to X).
+
 ### Environment variables
 
 | Variable | Required | Description |
@@ -52,7 +59,7 @@ For development: `npm run dev` (auto-reloads). Set `DRY_RUN=true` to log tweets 
 | `X_ACCESS_TOKEN` | Yes | X account access token |
 | `X_ACCESS_SECRET` | Yes | X account access secret |
 | `ADMIN_PASSWORD` | Yes | Dashboard login password |
-| `POLL_INTERVAL_SECONDS` | No | Polling interval (default: 600) |
+| `POLL_INTERVAL_SECONDS` | No | Seeds the initial poll interval (default: 600); adjustable live from the dashboard afterwards |
 | `DRY_RUN` | No | Log tweets instead of posting (default: false) |
 
 ---
@@ -92,7 +99,7 @@ docker run -d --name nft-sales-bot \
   nft-sales-bot
 ```
 
-The SQLite database lives in `/app/data` — mount a volume to persist collections and dedup state across restarts.
+The SQLite database lives in `/app/data` — mount a volume to persist collections, dashboard settings and dedup state across restarts.
 
 ### Railway
 

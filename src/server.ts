@@ -3,11 +3,16 @@ import express from "express";
 import path from "path";
 import { getCurrentBlock } from "./moralis";
 import {
+  ALL_MARKETPLACES,
   addCollection,
   deleteCollection,
+  getMarketplaces,
+  getPollIntervalSeconds,
   isDryRun,
   listCollections,
   setDryRun,
+  setMarketplaces,
+  setPollIntervalSeconds,
   updateCollection,
 } from "./db";
 
@@ -81,18 +86,69 @@ export function startServer(): void {
 
   // --- Settings ---
 
+  function settingsPayload() {
+    return {
+      dryRun: isDryRun(),
+      marketplaces: getMarketplaces(),
+      allMarketplaces: ALL_MARKETPLACES,
+      pollIntervalSeconds: getPollIntervalSeconds(),
+    };
+  }
+
   app.get("/api/settings", (_req, res) => {
-    res.json({ dryRun: isDryRun() });
+    res.json(settingsPayload());
   });
 
   app.patch("/api/settings", (req, res) => {
-    if (req.body?.dryRun === undefined) {
+    const body = req.body ?? {};
+    let touched = false;
+
+    if (body.dryRun !== undefined) {
+      setDryRun(!!body.dryRun);
+      console.log(`Mode switched to ${isDryRun() ? "DRY RUN" : "LIVE"} via dashboard`);
+      touched = true;
+    }
+
+    if (body.marketplaces !== undefined) {
+      if (
+        !Array.isArray(body.marketplaces) ||
+        body.marketplaces.some((m: unknown) => typeof m !== "string")
+      ) {
+        res.status(400).json({ error: "marketplaces must be an array of strings" });
+        return;
+      }
+      const invalid = (body.marketplaces as string[]).filter((m) => !ALL_MARKETPLACES.includes(m));
+      if (invalid.length > 0) {
+        res.status(400).json({ error: `Unknown marketplace(s): ${invalid.join(", ")}` });
+        return;
+      }
+      try {
+        setMarketplaces(body.marketplaces as string[]);
+        console.log(`Marketplaces set to [${getMarketplaces().join(", ")}] via dashboard`);
+        touched = true;
+      } catch (err) {
+        res.status(400).json({ error: err instanceof Error ? err.message : "Invalid marketplaces" });
+        return;
+      }
+    }
+
+    if (body.pollIntervalSeconds !== undefined) {
+      const n = Number(body.pollIntervalSeconds);
+      if (!Number.isFinite(n) || n < 60 || n > 86400) {
+        res.status(400).json({ error: "pollIntervalSeconds must be between 60 and 86400" });
+        return;
+      }
+      setPollIntervalSeconds(n);
+      console.log(`Poll interval set to ${getPollIntervalSeconds()}s via dashboard`);
+      touched = true;
+    }
+
+    if (!touched) {
       res.status(400).json({ error: "Nothing to update" });
       return;
     }
-    setDryRun(!!req.body.dryRun);
-    console.log(`Mode switched to ${isDryRun() ? "DRY RUN" : "LIVE"} via dashboard`);
-    res.json({ dryRun: isDryRun() });
+
+    res.json(settingsPayload());
   });
 
   // --- Collections CRUD ---

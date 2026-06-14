@@ -9,6 +9,8 @@ import {
 import {
   Collection,
   getActiveCollections,
+  getMarketplaces,
+  getPollIntervalSeconds,
   hasTweeted,
   markTweeted,
   nextPhrase,
@@ -29,7 +31,7 @@ const CURSOR_LAG_BLOCKS = 300;
 
 async function processCollection(collection: Collection, currentBlock: number): Promise<void> {
   const fromBlock = collection.last_block + 1;
-  const trades = await getTradesSince(collection.contract_address, fromBlock);
+  const trades = await getTradesSince(collection.contract_address, fromBlock, getMarketplaces());
   if (collection.track_mints) {
     trades.push(...(await getMintsSince(collection.contract_address, fromBlock)));
     trades.sort((a, b) => a.blockNumber - b.blockNumber);
@@ -91,7 +93,6 @@ async function processCollection(collection: Collection, currentBlock: number): 
 }
 
 export function startPoller(): void {
-  const intervalMs = Math.max(15, Number(process.env.POLL_INTERVAL_SECONDS) || 120) * 1000;
   let cycles = 0;
 
   const tick = async () => {
@@ -114,9 +115,9 @@ export function startPoller(): void {
       }
     }
     if (++cycles % 1440 === 0) pruneTweeted();
-    setTimeout(tick, intervalMs);
+    setTimeout(tick, getPollIntervalSeconds() * 1000);
   };
 
-  console.log(`Poller started (every ${intervalMs / 1000}s)`);
+  console.log(`Poller started (every ${getPollIntervalSeconds()}s, adjustable from the dashboard)`);
   void tick();
 }

@@ -54,6 +54,76 @@ export function setDryRun(dryRun: boolean): void {
   );
 }
 
+// --- Marketplaces to poll (subset of the supported set) ---
+
+export const ALL_MARKETPLACES: string[] = ["opensea", "blur", "looksrare", "x2y2", "0xprotocol"];
+const DEFAULT_MARKETPLACES = ["opensea", "blur"];
+
+if (!db.prepare("SELECT 1 FROM settings WHERE key = 'marketplaces'").get()) {
+  db.prepare("INSERT INTO settings (key, value) VALUES ('marketplaces', ?)").run(
+    JSON.stringify(DEFAULT_MARKETPLACES)
+  );
+}
+
+export function getMarketplaces(): string[] {
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'marketplaces'").get() as
+    | { value: string }
+    | undefined;
+  if (row) {
+    try {
+      const parsed = JSON.parse(row.value);
+      if (Array.isArray(parsed)) {
+        const cleaned = parsed.filter((m) => ALL_MARKETPLACES.includes(m));
+        if (cleaned.length > 0) return cleaned;
+      }
+    } catch {
+      /* malformed, fall through */
+    }
+  }
+  return [...DEFAULT_MARKETPLACES];
+}
+
+export function setMarketplaces(marketplaces: string[]): string[] {
+  const cleaned = [...new Set(marketplaces)].filter((m) => ALL_MARKETPLACES.includes(m));
+  if (cleaned.length === 0) throw new Error("At least one marketplace is required");
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('marketplaces', ?)").run(
+    JSON.stringify(cleaned)
+  );
+  return cleaned;
+}
+
+// --- Poll interval (seconds), dashboard-adjustable ---
+
+const MIN_POLL_SECONDS = 60;
+const MAX_POLL_SECONDS = 86400;
+const DEFAULT_POLL_SECONDS = Math.min(
+  MAX_POLL_SECONDS,
+  Math.max(MIN_POLL_SECONDS, Number(process.env.POLL_INTERVAL_SECONDS) || 600)
+);
+
+if (!db.prepare("SELECT 1 FROM settings WHERE key = 'poll_interval_seconds'").get()) {
+  db.prepare("INSERT INTO settings (key, value) VALUES ('poll_interval_seconds', ?)").run(
+    String(DEFAULT_POLL_SECONDS)
+  );
+}
+
+export function getPollIntervalSeconds(): number {
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'poll_interval_seconds'").get() as
+    | { value: string }
+    | undefined;
+  const n = Number(row?.value);
+  if (!Number.isFinite(n)) return DEFAULT_POLL_SECONDS;
+  return Math.min(MAX_POLL_SECONDS, Math.max(MIN_POLL_SECONDS, Math.round(n)));
+}
+
+export function setPollIntervalSeconds(seconds: number): number {
+  const clamped = Math.min(MAX_POLL_SECONDS, Math.max(MIN_POLL_SECONDS, Math.round(seconds)));
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('poll_interval_seconds', ?)").run(
+    String(clamped)
+  );
+  return clamped;
+}
+
 // Migration for databases created before the phrases feature
 const existingColumns = (db.prepare("PRAGMA table_info(collections)").all() as { name: string }[]).map(
   (c) => c.name

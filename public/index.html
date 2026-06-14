@@ -87,6 +87,27 @@
         </table>
       </section>
 
+      <section class="card liquid-glass">
+        <h2>Bot settings</h2>
+        <div class="settings-grid">
+          <div class="setting-block">
+            <span class="setting-label">Marketplaces to track</span>
+            <p class="muted setting-hint">Fewer marketplaces = less Moralis quota burned each poll.</p>
+            <div id="marketplaces-options" class="mkt-options"></div>
+          </div>
+          <div class="setting-block">
+            <label class="setting-label" for="interval-input">Poll interval</label>
+            <p class="muted setting-hint">How often to check for new sales &amp; mints (60–86400s).</p>
+            <div class="interval-row">
+              <input type="number" id="interval-input" min="60" max="86400" step="30" />
+              <span class="muted">seconds</span>
+              <button id="interval-save" class="btn btn-sm btn-primary">Save</button>
+            </div>
+          </div>
+        </div>
+        <p id="settings-status" class="muted setting-status"></p>
+      </section>
+
       <p class="muted footnote">
         Sales across OpenSea, Blur, LooksRare, X2Y2 &amp; CryptoPunks are tweeted from one X account.
         New collections start tracking from the current block.
@@ -128,7 +149,7 @@
           </div>
           <div class="env-row env-row-optional">
             <div class="env-key">POLL_INTERVAL_SECONDS<span class="optional-tag">optional</span></div>
-            <div class="env-desc">How often to poll for new sales. Default: <code>600</code>. Lower values consume more Moralis API quota. Free tier: keep at 600+.</div>
+            <div class="env-desc">Initial poll frequency (seconds). Default: <code>600</code>. Now adjustable live under <strong>Bot settings</strong> above — no restart needed. Lower values consume more Moralis quota.</div>
           </div>
           <div class="env-row env-row-optional">
             <div class="env-key">DRY_RUN<span class="optional-tag">optional</span></div>

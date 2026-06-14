@@ -57,9 +57,13 @@ function parseTrade(raw: RawTrade, marketplace: string): Trade {
  * Fetch all trades for a contract from `fromBlock` (inclusive) onwards across
  * every supported marketplace, sorted oldest-first.
  */
-export async function getTradesSince(contractAddress: string, fromBlock: number): Promise<Trade[]> {
+export async function getTradesSince(
+  contractAddress: string,
+  fromBlock: number,
+  marketplaces: readonly string[] = MARKETPLACES
+): Promise<Trade[]> {
   const all: Trade[] = [];
-  for (const marketplace of MARKETPLACES) {
+  for (const marketplace of marketplaces) {
     let cursor: string | undefined;
     do {
       const params = new URLSearchParams({

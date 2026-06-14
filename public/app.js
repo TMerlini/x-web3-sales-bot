@@ -26,7 +26,7 @@ function showApp() {
   loginView.classList.add("hidden");
   appView.classList.remove("hidden");
   loadCollections();
-  loadMode();
+  loadSettings();
 }
 
 // --- Auth ---
@@ -65,16 +65,6 @@ function renderMode() {
   pill.title = currentDryRun
     ? "Dry run: tweets are only logged to the console. Click to go live."
     : "Live: tweets are posted to X. Click to switch to dry run.";
-}
-
-async function loadMode() {
-  try {
-    const { dryRun } = await api("/api/settings");
-    currentDryRun = dryRun;
-    renderMode();
-  } catch {
-    /* 401 already handled */
-  }
 }
 
 $("mode-toggle").addEventListener("click", async () => {
@@ -337,6 +327,94 @@ $("add-form").addEventListener("submit", async (e) => {
     errorEl.classList.remove("hidden");
   }
 });
+
+// --- Bot settings (marketplaces + poll interval) ---
+
+const MARKET_LABELS = {
+  opensea: "OpenSea",
+  blur: "Blur",
+  looksrare: "LooksRare",
+  x2y2: "X2Y2",
+  "0xprotocol": "0x Protocol",
+};
+
+let currentMarketplaces = [];
+
+function renderMarketplaces(all, selected) {
+  const container = $("marketplaces-options");
+  container.innerHTML = "";
+  for (const mkt of all) {
+    const label = document.createElement("label");
+    label.className = "mkt-option";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = mkt;
+    cb.checked = selected.includes(mkt);
+    cb.addEventListener("change", saveMarketplaces);
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(" " + (MARKET_LABELS[mkt] || mkt)));
+    container.appendChild(label);
+  }
+}
+
+function selectedMarketplaces() {
+  return [...$("marketplaces-options").querySelectorAll("input:checked")].map((c) => c.value);
+}
+
+async function saveMarketplaces() {
+  const status = $("settings-status");
+  const chosen = selectedMarketplaces();
+  if (chosen.length === 0) {
+    status.textContent = "Pick at least one marketplace.";
+    renderMarketplaces(Object.keys(MARKET_LABELS), currentMarketplaces);
+    return;
+  }
+  try {
+    const s = await api("/api/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ marketplaces: chosen }),
+    });
+    currentMarketplaces = s.marketplaces;
+    status.textContent =
+      "Saved — tracking " + s.marketplaces.map((m) => MARKET_LABELS[m] || m).join(", ") + ".";
+  } catch (err) {
+    status.textContent = err.message;
+    renderMarketplaces(Object.keys(MARKET_LABELS), currentMarketplaces);
+  }
+}
+
+$("interval-save").addEventListener("click", async () => {
+  const status = $("settings-status");
+  const seconds = Number($("interval-input").value);
+  if (!Number.isFinite(seconds) || seconds < 60 || seconds > 86400) {
+    status.textContent = "Interval must be between 60 and 86400 seconds.";
+    return;
+  }
+  try {
+    const s = await api("/api/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ pollIntervalSeconds: seconds }),
+    });
+    $("interval-input").value = s.pollIntervalSeconds;
+    status.textContent =
+      "Saved — polling every " + s.pollIntervalSeconds + "s (applies next cycle).";
+  } catch (err) {
+    status.textContent = err.message;
+  }
+});
+
+async function loadSettings() {
+  try {
+    const s = await api("/api/settings");
+    currentDryRun = s.dryRun;
+    renderMode();
+    currentMarketplaces = s.marketplaces || [];
+    renderMarketplaces(s.allMarketplaces || Object.keys(MARKET_LABELS), currentMarketplaces);
+    $("interval-input").value = s.pollIntervalSeconds || 600;
+  } catch {
+    /* 401 already handled */
+  }
+}
 
 // --- Init ---
 
