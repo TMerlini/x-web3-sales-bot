@@ -438,7 +438,7 @@ function setChip(id, health) {
 }
 
 function renderConsole(d) {
-  const { moralis, x, queue = [], queueCount = 0, events = [], lastPollAt } = d;
+  const { moralis, x, queue = [], queueCount = 0, events = [], lastPollAt, postedCount = 0, lastPostedAt } = d;
 
   // Moralis
   setChip("status-moralis", moralis.health);
@@ -467,6 +467,12 @@ function renderConsole(d) {
   setChip("status-queue", queueCount > 0 ? "warn" : "ok");
   $("queue-detail").textContent =
     queueCount > 0 ? `${queueCount} sale${queueCount > 1 ? "s" : ""} pending retry` : "Empty";
+
+  // Posted
+  setChip("status-posted", postedCount > 0 ? "ok" : "unknown");
+  $("posted-detail").textContent = lastPostedAt
+    ? `${postedCount} this run · last ${fmtAgo(lastPostedAt)}`
+    : "None yet this run";
 
   // Warning banner
   const warn = $("console-warning");

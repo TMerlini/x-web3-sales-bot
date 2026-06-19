@@ -28,6 +28,7 @@ import {
   recordMoralis,
   recordTweetOk,
   recordTweetError,
+  recordPosted,
   classifyTweetError,
   isXDown,
   logEvent,
@@ -113,6 +114,11 @@ async function processCollection(collection: Collection, currentBlock: number): 
 
     markTweeted(group.txHash, collection.id);
     tweetedCount++;
+    recordPosted(
+      group.tokenIds.length === 1 && group.tokenIds[0]
+        ? `${collection.name} #${group.tokenIds[0]}`
+        : `${group.tokenIds.length}× ${collection.name}`
+    );
     console.log(
       `[${collection.name}] tweeted tx ${group.txHash} (${group.tokenIds.length} token(s), ${group.totalEth} ETH)`
     );
@@ -134,7 +140,7 @@ async function flushQueue(): Promise<void> {
       recordTweetOk();
       removeQueued(item.id);
       sent++;
-      logEvent("info", `Queued sale posted: ${item.collection_name} ${item.tx_hash.slice(0, 10)}…`);
+      recordPosted(`${item.collection_name} (from queue)`);
     } catch (err) {
       const xe = classifyTweetError(err);
       recordTweetError(xe);

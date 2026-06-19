@@ -25,6 +25,8 @@ const x: ApiStatus = { health: "unknown" };
 const events: BotEvent[] = [];
 const MAX_EVENTS = 50;
 let lastPollAt: string | null = null;
+let postedCount = 0;
+let lastPostedAt: string | null = null;
 
 const now = () => new Date().toISOString();
 
@@ -35,6 +37,12 @@ export function logEvent(level: BotEvent["level"], message: string): void {
 
 export function recordPoll(): void {
   lastPollAt = now();
+}
+
+export function recordPosted(label: string): void {
+  postedCount += 1;
+  lastPostedAt = now();
+  logEvent("info", `Posted: ${label}`);
 }
 
 export function recordMoralis(ok: boolean, message?: string): void {
@@ -101,5 +109,5 @@ export function isXDown(): boolean {
 }
 
 export function getStatusSnapshot() {
-  return { moralis, x, lastPollAt, events: events.slice(0, 30) };
+  return { moralis, x, lastPollAt, postedCount, lastPostedAt, events: events.slice(0, 30) };
 }
