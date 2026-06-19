@@ -10,11 +10,14 @@ import {
   getPollIntervalSeconds,
   isDryRun,
   listCollections,
+  listQueue,
+  queueCount,
   setDryRun,
   setMarketplaces,
   setPollIntervalSeconds,
   updateCollection,
 } from "./db";
+import { getStatusSnapshot } from "./status";
 
 const SESSION_COOKIE = "sid";
 const sessions = new Set<string>();
@@ -82,6 +85,16 @@ export function startServer(): void {
       return;
     }
     next();
+  });
+
+  // --- Console: live health + retry queue ---
+
+  app.get("/api/console", (_req, res) => {
+    res.json({
+      ...getStatusSnapshot(),
+      queue: listQueue(),
+      queueCount: queueCount(),
+    });
   });
 
   // --- Settings ---

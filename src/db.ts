@@ -33,6 +33,19 @@ db.exec(`
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    collection_id INTEGER NOT NULL,
+    collection_name TEXT NOT NULL,
+    tx_hash TEXT NOT NULL,
+    text TEXT NOT NULL,
+    image_url TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (tx_hash, collection_id)
+  );
 `);
 
 // Seed dry-run mode from the env on first run; afterwards the dashboard toggle owns it.
@@ -264,4 +277,48 @@ export function markTweeted(txHash: string, collectionId: number): void {
 /** Prune dedupe rows older than 30 days to keep the table small. */
 export function pruneTweeted(): void {
   db.prepare("DELETE FROM tweeted WHERE tweeted_at < datetime('now', '-30 days')").run();
+}
+
+// --- Retry queue: sales detected but not yet posted (e.g. X API down) ---
+
+export interface QueuedSale {
+  id: number;
+  collection_id: number;
+  collection_name: string;
+  tx_hash: string;
+  text: string;
+  image_url: string | null;
+  attempts: number;
+  last_error: string | null;
+  created_at: string;
+}
+
+export function enqueueSale(
+  collectionId: number,
+  collectionName: string,
+  txHash: string,
+  text: string,
+  imageUrl: string | undefined,
+  error: string
+): void {
+  db.prepare(
+    `INSERT OR IGNORE INTO queue (collection_id, collection_name, tx_hash, text, image_url, last_error)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(collectionId, collectionName, txHash, text, imageUrl ?? null, error);
+}
+
+export function listQueue(): QueuedSale[] {
+  return db.prepare("SELECT * FROM queue ORDER BY created_at ASC").all() as QueuedSale[];
+}
+
+export function queueCount(): number {
+  return (db.prepare("SELECT COUNT(*) AS c FROM queue").get() as { c: number }).c;
+}
+
+export function removeQueued(id: number): void {
+  db.prepare("DELETE FROM queue WHERE id = ?").run(id);
+}
+
+export function bumpQueueAttempt(id: number, error: string): void {
+  db.prepare("UPDATE queue SET attempts = attempts + 1, last_error = ? WHERE id = ?").run(error, id);
 }

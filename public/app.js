@@ -27,6 +27,7 @@ function showApp() {
   appView.classList.remove("hidden");
   loadCollections();
   loadSettings();
+  startConsolePolling();
 }
 
 // --- Auth ---
@@ -414,6 +415,119 @@ async function loadSettings() {
   } catch {
     /* 401 already handled */
   }
+}
+
+// --- Console (live health + retry queue) ---
+
+const esc = (s) =>
+  String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function fmtAgo(iso) {
+  if (!iso) return "never";
+  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 5) return "just now";
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  return `${Math.floor(s / 3600)}h ago`;
+}
+
+function setChip(id, health) {
+  const chip = $(id);
+  chip.classList.remove("ok", "down", "warn", "unknown");
+  chip.classList.add(health || "unknown");
+}
+
+function renderConsole(d) {
+  const { moralis, x, queue = [], queueCount = 0, events = [], lastPollAt } = d;
+
+  // Moralis
+  setChip("status-moralis", moralis.health);
+  $("moralis-detail").textContent =
+    moralis.health === "ok"
+      ? `OK · checked ${fmtAgo(moralis.lastCheckAt)}`
+      : moralis.health === "down"
+      ? moralis.detail === "quota"
+        ? "Quota exhausted — not detecting sales"
+        : "Error fetching trades"
+      : "Waiting for first poll…";
+
+  // X
+  setChip("status-x", x.health);
+  let xText;
+  if (x.health === "ok") xText = `OK · posted ${fmtAgo(x.lastOkAt)}`;
+  else if (x.health === "down") {
+    if (x.detail === "spend_cap") xText = "Spend cap reached" + (x.resetAt ? ` · resets ${esc(x.resetAt)}` : "");
+    else if (x.detail === "rate_limit") xText = "Rate-limited";
+    else if (x.detail === "auth") xText = "Auth failed — check credentials";
+    else xText = esc(x.message || "Error");
+  } else xText = "Waiting…";
+  $("x-detail").textContent = xText;
+
+  // Queue
+  setChip("status-queue", queueCount > 0 ? "warn" : "ok");
+  $("queue-detail").textContent =
+    queueCount > 0 ? `${queueCount} sale${queueCount > 1 ? "s" : ""} pending retry` : "Empty";
+
+  // Warning banner
+  const warn = $("console-warning");
+  const ws = [];
+  if (moralis.health === "down")
+    ws.push(
+      moralis.detail === "quota"
+        ? "⚠ Moralis quota exhausted — no new sales are being detected until it resets."
+        : "⚠ Moralis is failing — sale detection is paused."
+    );
+  if (x.health === "down")
+    ws.push(
+      x.detail === "spend_cap"
+        ? `⚠ X API spend cap reached — posting is blocked${x.resetAt ? ` until ${esc(x.resetAt)}` : ""}. Detected sales are queued and auto-post when it clears.`
+        : `⚠ X API ${esc(x.detail || "error")} — posting blocked; sales are being queued.`
+    );
+  if (ws.length) {
+    warn.innerHTML = ws.map((w) => `<div>${w}</div>`).join("");
+    warn.classList.remove("hidden");
+  } else warn.classList.add("hidden");
+
+  // Queue list
+  const ql = $("queue-list");
+  if (queue.length) {
+    ql.innerHTML = queue
+      .map(
+        (q) =>
+          `<div class="queue-item"><span class="qi-name">${esc(q.collection_name)}</span>` +
+          `<a class="qi-tx" href="https://etherscan.io/tx/${esc(q.tx_hash)}" target="_blank" rel="noopener">${esc(q.tx_hash.slice(0, 10))}…</a>` +
+          `<span class="qi-meta">${q.attempts} ${q.attempts === 1 ? "try" : "tries"}</span></div>`
+      )
+      .join("");
+    ql.classList.remove("hidden");
+  } else ql.classList.add("hidden");
+
+  // Event log
+  $("console-log").innerHTML =
+    events.length
+      ? events
+          .map(
+            (ev) =>
+              `<li class="log-${esc(ev.level)}"><span class="log-time">${fmtAgo(ev.at)}</span> ${esc(ev.message)}</li>`
+          )
+          .join("")
+      : "<li class='muted'>No events yet.</li>";
+
+  $("console-updated").textContent = `updated ${fmtAgo(lastPollAt)}`;
+}
+
+let consoleTimer = null;
+async function loadConsole() {
+  try {
+    renderConsole(await api("/api/console"));
+  } catch {
+    /* 401 already handled */
+  }
+}
+function startConsolePolling() {
+  loadConsole();
+  if (consoleTimer) clearInterval(consoleTimer);
+  consoleTimer = setInterval(loadConsole, 15000);
 }
 
 // --- Init ---

@@ -16,9 +16,25 @@ import {
   nextPhrase,
   pruneTweeted,
   setLastBlock,
+  enqueueSale,
+  listQueue,
+  removeQueued,
+  bumpQueueAttempt,
 } from "./db";
 import { getEthUsdPrice } from "./price";
 import { formatTweet, groupTradesByTx, postTweet } from "./tweet";
+import {
+  recordPoll,
+  recordMoralis,
+  recordTweetOk,
+  recordTweetError,
+  classifyTweetError,
+  isXDown,
+  logEvent,
+} from "./status";
+
+// Give up on a queued sale after this many failed retries (~days of an outage).
+const MAX_QUEUE_ATTEMPTS = 100;
 
 // Safety valve so a sudden burst of sales can't blow through X rate limits
 // in a single cycle. Remaining sales are picked up on the next cycle.
@@ -73,13 +89,26 @@ async function processCollection(collection: Collection, currentBlock: number): 
 
     const text = formatTweet(collection, group, metadata, ethUsd, nextPhrase(collection), buyerEns, sellerEns);
 
+    // X already known-down this cycle: queue it without hammering the API.
+    if (isXDown()) {
+      enqueueSale(collection.id, collection.name, group.txHash, text, metadata.imageUrl, "queued: X API down");
+      markTweeted(group.txHash, collection.id); // handed to the retry queue; cursor may advance
+      continue;
+    }
+
     try {
       await postTweet(text, metadata.imageUrl);
+      recordTweetOk();
     } catch (err) {
-      // Tweet failed (rate limit, network, ...): don't mark, don't advance
-      // the cursor — this group is retried on the next cycle.
+      const xe = classifyTweetError(err);
+      recordTweetError(xe);
       console.error(`[${collection.name}] tweet failed for tx ${group.txHash}:`, err);
-      return;
+      // Decouple retry from the cursor: queue the sale (so the cursor still
+      // advances — no Moralis-CU burn from a frozen cursor) and let the queue
+      // re-post it when X recovers.
+      enqueueSale(collection.id, collection.name, group.txHash, text, metadata.imageUrl, `${xe.kind}: ${xe.message}`);
+      markTweeted(group.txHash, collection.id);
+      continue;
     }
 
     markTweeted(group.txHash, collection.id);
@@ -92,16 +121,48 @@ async function processCollection(collection: Collection, currentBlock: number): 
   setLastBlock(collection.id, newCursor);
 }
 
+// Retry the sales the queue is holding (e.g. after an X-API outage). Runs at
+// the start of each cycle; the first attempt also probes whether X recovered.
+async function flushQueue(): Promise<void> {
+  const items = listQueue();
+  if (items.length === 0) return;
+  let sent = 0;
+  for (const item of items) {
+    if (sent >= MAX_TWEETS_PER_CYCLE) break;
+    try {
+      await postTweet(item.text, item.image_url ?? undefined);
+      recordTweetOk();
+      removeQueued(item.id);
+      sent++;
+      logEvent("info", `Queued sale posted: ${item.collection_name} ${item.tx_hash.slice(0, 10)}…`);
+    } catch (err) {
+      const xe = classifyTweetError(err);
+      recordTweetError(xe);
+      if (item.attempts + 1 >= MAX_QUEUE_ATTEMPTS) {
+        removeQueued(item.id);
+        logEvent("error", `Dropped queued sale after ${MAX_QUEUE_ATTEMPTS} tries: ${item.collection_name} ${item.tx_hash.slice(0, 10)}…`);
+      } else {
+        bumpQueueAttempt(item.id, `${xe.kind}: ${xe.message}`);
+      }
+      break; // X still down — stop the flush, retry next cycle
+    }
+  }
+}
+
 export function startPoller(): void {
   let cycles = 0;
 
   const tick = async () => {
+    recordPoll();
+    await flushQueue(); // post anything queued first (and probe X health)
     const collections = getActiveCollections();
     if (collections.length > 0) {
       let currentBlock: number | null = null;
       try {
         currentBlock = await getCurrentBlock();
+        recordMoralis(true);
       } catch (err) {
+        recordMoralis(false, err instanceof Error ? err.message : String(err));
         console.error("Could not fetch current block, skipping cycle:", err);
       }
       if (currentBlock !== null) {

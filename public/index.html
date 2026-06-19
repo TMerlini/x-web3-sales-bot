@@ -46,6 +46,42 @@
     </header>
 
     <main>
+      <section class="card liquid-glass console-card">
+        <div class="console-head">
+          <h2>Console</h2>
+          <span id="console-updated" class="muted console-updated"></span>
+        </div>
+        <div class="console-status">
+          <div class="status-chip" id="status-moralis">
+            <span class="status-dot"></span>
+            <div class="status-text">
+              <span class="status-name">Moralis</span>
+              <span class="status-detail" id="moralis-detail">—</span>
+            </div>
+          </div>
+          <div class="status-chip" id="status-x">
+            <span class="status-dot"></span>
+            <div class="status-text">
+              <span class="status-name">X API</span>
+              <span class="status-detail" id="x-detail">—</span>
+            </div>
+          </div>
+          <div class="status-chip" id="status-queue">
+            <span class="status-dot"></span>
+            <div class="status-text">
+              <span class="status-name">Retry queue</span>
+              <span class="status-detail" id="queue-detail">—</span>
+            </div>
+          </div>
+        </div>
+        <div id="console-warning" class="console-warning hidden"></div>
+        <div id="queue-list" class="queue-list hidden"></div>
+        <details class="console-log-wrap">
+          <summary>Recent events</summary>
+          <ul id="console-log" class="console-log"></ul>
+        </details>
+      </section>
+
       <section class="card liquid-glass">
         <h2>Add collection</h2>
         <form id="add-form" class="add-form">
