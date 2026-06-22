@@ -62,7 +62,7 @@ export function recordMoralis(ok: boolean, message?: string): void {
 }
 
 export interface XError {
-  kind: "spend_cap" | "rate_limit" | "auth" | "other";
+  kind: "credits" | "spend_cap" | "rate_limit" | "auth" | "other";
   code?: number;
   message: string;
   resetAt?: string;
@@ -73,7 +73,13 @@ export function classifyTweetError(err: unknown): XError {
   const e = err as { code?: number; message?: string; data?: { title?: string; detail?: string; type?: string; reset_date?: string }; rateLimit?: { reset?: number } };
   const code = e?.code;
   const data = e?.data;
-  if (code === 403 && (data?.title === "SpendCapReached" || (data?.type ?? "").includes("credits"))) {
+  // Out of post credits — checked FIRST because X attaches a rateLimit object to
+  // this error too, which would otherwise mis-bucket it as a rate limit. The fix
+  // here is a recharge of the X API plan, not waiting for a reset window.
+  if (data?.title === "CreditsDepleted" || (data?.type ?? "").includes("credits")) {
+    return { kind: "credits", code, message: "X account out of credits — recharge your X API plan", resetAt: data?.reset_date ? String(data.reset_date) : undefined };
+  }
+  if (code === 403 && data?.title === "SpendCapReached") {
     return { kind: "spend_cap", code, message: data?.detail || "X API monthly spend cap reached", resetAt: data?.reset_date ? String(data.reset_date) : undefined };
   }
   if (code === 429 || e?.rateLimit) {

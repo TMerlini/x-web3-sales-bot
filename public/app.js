@@ -456,7 +456,8 @@ function renderConsole(d) {
   let xText;
   if (x.health === "ok") xText = `OK · posted ${fmtAgo(x.lastOkAt)}`;
   else if (x.health === "down") {
-    if (x.detail === "spend_cap") xText = "Spend cap reached" + (x.resetAt ? ` · resets ${esc(x.resetAt)}` : "");
+    if (x.detail === "credits") xText = "Out of credits — recharge X plan";
+    else if (x.detail === "spend_cap") xText = "Spend cap reached" + (x.resetAt ? ` · resets ${esc(x.resetAt)}` : "");
     else if (x.detail === "rate_limit") xText = "Rate-limited";
     else if (x.detail === "auth") xText = "Auth failed — check credentials";
     else xText = esc(x.message || "Error");
@@ -485,7 +486,9 @@ function renderConsole(d) {
     );
   if (x.health === "down")
     ws.push(
-      x.detail === "spend_cap"
+      x.detail === "credits"
+        ? "⚠ X API out of credits — recharge your X API plan. Detected sales are queued and auto-post once credits are restored."
+        : x.detail === "spend_cap"
         ? `⚠ X API spend cap reached — posting is blocked${x.resetAt ? ` until ${esc(x.resetAt)}` : ""}. Detected sales are queued and auto-post when it clears.`
         : `⚠ X API ${esc(x.detail || "error")} — posting blocked; sales are being queued.`
     );
