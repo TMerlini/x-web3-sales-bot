@@ -50,8 +50,15 @@ async function processCollection(collection: Collection, currentBlock: number): 
   const fromBlock = collection.last_block + 1;
   const trades = await getTradesSince(collection.contract_address, fromBlock, getMarketplaces());
   if (collection.track_mints) {
-    trades.push(...(await getMintsSince(collection.contract_address, fromBlock)));
-    trades.sort((a, b) => a.blockNumber - b.blockNumber);
+    // Moralis's /transfers timestamp index has occasional per-block gaps (HTTP 425
+    // "block timestamp not found"). A mints failure must NOT discard the sales already
+    // fetched above, nor stall the cursor — isolate it and continue with trades only.
+    try {
+      trades.push(...(await getMintsSince(collection.contract_address, fromBlock)));
+      trades.sort((a, b) => a.blockNumber - b.blockNumber);
+    } catch (e: any) {
+      console.warn(`[${collection.name}] mints fetch failed, continuing with sales only: ${e?.message ?? e}`);
+    }
   }
   const newCursor = Math.max(collection.last_block, currentBlock - CURSOR_LAG_BLOCKS);
 
