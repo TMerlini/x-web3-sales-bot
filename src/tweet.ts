@@ -1,5 +1,5 @@
 import { TwitterApi } from "twitter-api-v2";
-import { Trade, TokenMetadata, marketplaceLabel } from "./moralis";
+import { Trade, TokenMetadata, marketplaceLabel } from "./sources";
 import { Collection, isDryRun } from "./db";
 
 let client: TwitterApi | null = null;

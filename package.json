@@ -16,7 +16,8 @@
     "better-sqlite3": "^12.10.0",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "twitter-api-v2": "^1.29.0"
+    "twitter-api-v2": "^1.29.0",
+    "ethers": "^6.13.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

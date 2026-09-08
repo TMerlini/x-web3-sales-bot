@@ -1,6 +1,6 @@
 // In-memory operational status for the dashboard console.
 // Surfaces the two external dependencies that silently block the bot —
-// Moralis (sale *detection*) and X (sale *posting*) — plus a rolling event log.
+// Alchemy (sale *detection*) and X (sale *posting*) — plus a rolling event log.
 
 export type Health = "ok" | "down" | "unknown";
 
@@ -57,7 +57,7 @@ export function recordMoralis(ok: boolean, message?: string): void {
     moralis.message = message;
     // crude quota detection from the thrown message ("...failed (401)..." / "consumed")
     moralis.detail = message && /401|consumed|usage|quota/i.test(message) ? "quota" : "error";
-    logEvent("error", `Moralis ${moralis.detail === "quota" ? "quota exhausted" : "error"}: ${message ?? "request failed"}`);
+    logEvent("error", `Alchemy ${moralis.detail === "quota" ? "quota exhausted" : "error"}: ${message ?? "request failed"}`);
   }
 }
 
