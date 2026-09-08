@@ -5,7 +5,7 @@ import {
   getTradesSince,
   TokenMetadata,
   resolveEnsName,
-} from "./moralis";
+} from "./sources";
 import {
   Collection,
   getActiveCollections,
@@ -50,8 +50,15 @@ async function processCollection(collection: Collection, currentBlock: number): 
   const fromBlock = collection.last_block + 1;
   const trades = await getTradesSince(collection.contract_address, fromBlock, getMarketplaces());
   if (collection.track_mints) {
-    trades.push(...(await getMintsSince(collection.contract_address, fromBlock)));
-    trades.sort((a, b) => a.blockNumber - b.blockNumber);
+    // Moralis's /transfers timestamp index has occasional per-block gaps (HTTP 425
+    // "block timestamp not found"). A mints failure must NOT discard the sales already
+    // fetched above, nor stall the cursor — isolate it and continue with trades only.
+    try {
+      trades.push(...(await getMintsSince(collection.contract_address, fromBlock)));
+      trades.sort((a, b) => a.blockNumber - b.blockNumber);
+    } catch (e: any) {
+      console.warn(`[${collection.name}] mints fetch failed, continuing with sales only: ${e?.message ?? e}`);
+    }
   }
   const newCursor = Math.max(collection.last_block, currentBlock - CURSOR_LAG_BLOCKS);
 
@@ -159,30 +166,38 @@ export function startPoller(): void {
   let cycles = 0;
 
   const tick = async () => {
-    recordPoll();
-    await flushQueue(); // post anything queued first (and probe X health)
-    const collections = getActiveCollections();
-    if (collections.length > 0) {
-      let currentBlock: number | null = null;
-      try {
-        currentBlock = await getCurrentBlock();
-        recordMoralis(true);
-      } catch (err) {
-        recordMoralis(false, err instanceof Error ? err.message : String(err));
-        console.error("Could not fetch current block, skipping cycle:", err);
-      }
-      if (currentBlock !== null) {
-        for (const collection of collections) {
-          try {
-            await processCollection(collection, currentBlock);
-          } catch (err) {
-            console.error(`[${collection.name}] poll cycle failed:`, err);
+    try {
+      recordPoll();
+      await flushQueue(); // post anything queued first (and probe X health)
+      const collections = getActiveCollections();
+      if (collections.length > 0) {
+        let currentBlock: number | null = null;
+        try {
+          currentBlock = await getCurrentBlock();
+          recordMoralis(true);
+        } catch (err) {
+          recordMoralis(false, err instanceof Error ? err.message : String(err));
+          console.error("Could not fetch current block, skipping cycle:", err);
+        }
+        if (currentBlock !== null) {
+          for (const collection of collections) {
+            try {
+              await processCollection(collection, currentBlock);
+            } catch (err) {
+              console.error(`[${collection.name}] poll cycle failed:`, err);
+            }
           }
         }
       }
+      if (++cycles % 1440 === 0) pruneTweeted();
+    } catch (err) {
+      // A whole-cycle failure must never kill the loop. An uncaught error here (e.g. in
+      // flushQueue or getActiveCollections) once stopped polling silently for days; the
+      // finally below always re-arms the next tick so one bad cycle can't freeze the bot.
+      console.error("poll tick failed (loop continues):", err);
+    } finally {
+      setTimeout(tick, getPollIntervalSeconds() * 1000);
     }
-    if (++cycles % 1440 === 0) pruneTweeted();
-    setTimeout(tick, getPollIntervalSeconds() * 1000);
   };
 
   console.log(`Poller started (every ${getPollIntervalSeconds()}s, adjustable from the dashboard)`);
