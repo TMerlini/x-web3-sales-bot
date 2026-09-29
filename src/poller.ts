@@ -74,6 +74,18 @@ async function processCollection(collection: Collection, currentBlock: number): 
   for (const group of groups) {
     if (hasTweeted(group.txHash, collection.id)) continue;
 
+    // A sale whose price we could not derive is NOT a cheap sale. Zeroing it would let it fall
+    // through the min-price filter and disappear with no trace, which is the silent-skip this bot
+    // has just been bitten by. Surface it, then treat it as handled so the cursor still advances.
+    if (group.priceUnderivable) {
+      console.warn(
+        `[${collection.name}] sale ${group.txHash} has an UNDERIVABLE price ` +
+        `(no ETH value and no WETH movement — unsupported payment token). Not posted; not a 0 ETH sale.`
+      );
+      markTweeted(group.txHash, collection.id);
+      continue;
+    }
+
     if (collection.min_price_eth > 0 && group.totalEth < collection.min_price_eth) {
       markTweeted(group.txHash, collection.id); // below threshold: record as handled
       continue;

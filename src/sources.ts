@@ -2,7 +2,7 @@
 // Same public surface the poller/tweet/server already consume: Trade, TokenMetadata, marketplaceLabel,
 // getCurrentBlock, getTradesSince, getMintsSince, getTokenMetadata, resolveEnsName.
 //
-// Sales come from Alchemy's parsed getNFTSales (REST); mints + tx values + ENS come from the Alchemy
+// Sales are DERIVED ON-CHAIN (see getTradesSince); mints + tx values + ENS come from the Alchemy
 // JSON-RPC endpoint via ethers. Every collection is queried uniformly — whatever trades on OpenSea/Seaport
 // (incl. Pixel Goblins) is picked up. No third-party quota that resets on us the way Moralis did.
 
@@ -39,6 +39,12 @@ export interface Trade {
   buyerAddress: string;
   /** Total buyer-paid price, assumed 18-decimal ETH/WETH (true for all supported marketplaces). */
   priceEth: number;
+  /**
+   * How priceEth was obtained. "underivable" means we found a real sale but could not price it
+   * (e.g. a payment token we do not decode). It is NOT the same as a 0 ETH sale, and callers MUST
+   * NOT let it fall through a min-price filter silently — see poller.ts.
+   */
+  priceSource: "tx.value" | "weth-logs" | "underivable";
   blockNumber: number;
 }
 
@@ -47,70 +53,135 @@ export interface TokenMetadata {
   imageUrl?: string;
 }
 
-// ── sales: Alchemy getNFTSales ───────────────────────────────────────────────────────────────────────
-interface Fee { amount?: string | null; decimals?: number | null }
-interface RawSale {
-  marketplace?: string;
-  contractAddress?: string;
-  tokenId?: string;
-  buyerAddress?: string;
-  sellerAddress?: string;
-  sellerFee?: Fee; protocolFee?: Fee; royaltyFee?: Fee;
-  blockNumber?: number;
-  transactionHash?: string;
-}
+// ── sales: DERIVED ON-CHAIN ──────────────────────────────────────────────────────────────────────────
+// Alchemy's getNFTSales was removed on 2026-09-30, and had in any case been useless to us for far
+// longer: its index is frozen at block 19777901 (2024-05-01), which every response still reports in
+// `validAt`. Because this bot polls from the live cursor, every call returned an empty list. The
+// bot's own history shows it: 6 sales posted under Moralis (Jul-Aug 2026), then 0 after the Alchemy
+// migration on 2026-09-08, while mints kept posting. A vendor's parsed feed hid its own staleness.
+//
+// So a sale is now defined, and derived, from the primary artifact:
+//
+//   A sale is an ERC-721/1155 Transfer whose `from` is not the zero address, and whose transaction
+//   also contains a known marketplace fill event.
+//
+// That rule also does something getNFTSales did silently: it excludes wallet-to-wallet and OTC
+// transfers, because those carry no fill event.
+//
+// Marketplace topic0s are DERIVED with ethers.id() from the human-readable signature, never pasted
+// as opaque hex — a reviewer can check the string, not a digest.
+const FILL_EVENT_SIGS: Record<string, string> = {
+  seaport:   "OrderFulfilled(bytes32,address,address,address,(uint8,address,uint256,uint256)[],(uint8,address,uint256,uint256,address)[])",
+  looksrare: "TakerBid((bytes32,uint256,uint256,address,address,address),address,address,uint256,address,address,address,uint256,uint256[],uint256[])",
+  x2y2:      "EvInventory(bytes32,address,address,uint256,uint256,uint256,uint256,uint256,address,bytes,(uint256,bytes))",
+  blur:      "Execution721TakerFeePacked(bytes32,uint256,uint256,uint256)",
+};
+/** topic0 -> marketplace name, in the vocabulary marketplaceLabel() already understands. */
+const FILL_TOPICS: Record<string, string> = Object.fromEntries(
+  Object.entries(FILL_EVENT_SIGS).map(([name, sig]) => [ethers.id(sig), name])
+);
+const WETH_ADDRESS = "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2";
 
-// Buyer-paid total = what the seller nets + marketplace fee + royalty, all in the payment token.
-// (Verified against a real Goblinarinos sale: seller 0.2925 + protocol 0.0075 = 0.3 ETH.)
-function salePriceEth(s: RawSale): number {
-  let total = 0n;
-  let decimals = 18;
-  for (const f of [s.sellerFee, s.protocolFee, s.royaltyFee]) {
-    if (f?.amount) {
-      total += BigInt(f.amount);
-      if (typeof f.decimals === "number") decimals = f.decimals;
-    }
-  }
-  return Number(total) / 10 ** decimals;
+/**
+ * All ERC-721/1155 transfers for a collection in a block range, paginated to completion.
+ * Same call the mints path uses, minus the `fromAddress: ZERO` filter.
+ */
+async function getAllTransfers(contractAddress: string, fromBlock: number, toBlock: number) {
+  const transfers: RawTransfer[] = [];
+  let pageKey: string | undefined;
+  do {
+    const res = await fetch(RPC_URL(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: 1, method: "alchemy_getAssetTransfers",
+        params: [{
+          fromBlock: "0x" + fromBlock.toString(16),
+          toBlock: "0x" + toBlock.toString(16),
+          contractAddresses: [contractAddress],
+          category: ["erc721", "erc1155"],
+          order: "asc",
+          maxCount: "0x3e8",
+          ...(pageKey ? { pageKey } : {}),
+        }],
+      }),
+    });
+    if (!res.ok) throw new Error(`getAssetTransfers failed (${res.status})`);
+    const j = (await res.json()) as { result?: { transfers?: RawTransfer[]; pageKey?: string }; error?: { message: string } };
+    if (j.error) throw new Error(`getAssetTransfers: ${j.error.message}`);
+    transfers.push(...(j.result?.transfers ?? []));
+    pageKey = j.result?.pageKey || undefined;
+  } while (pageKey);
+  return transfers;
 }
 
 export async function getTradesSince(
   contractAddress: string,
   fromBlock: number,
-  _marketplaces?: readonly string[] // Alchemy returns all marketplaces; kept for signature compatibility.
+  _marketplaces?: readonly string[] // every marketplace with a known fill event is picked up; kept for signature compatibility.
 ): Promise<Trade[]> {
   const trades: Trade[] = [];
-  // Alchemy getNFTSales 400s on a high fromBlock when toBlock is the string "latest" (a quiet collection
-  // whose last sale is far behind the live cursor). An explicit NUMERIC toBlock avoids it. If the cursor
-  // has caught up to head there is nothing to scan.
   const head = await getCurrentBlock();
   if (fromBlock > head) return trades;
-  let pageKey: string | undefined;
-  do {
-    const params = new URLSearchParams({
-      fromBlock: String(fromBlock),
-      toBlock: String(head),
-      order: "asc",
-      contractAddress,
-      limit: "1000",
-    });
-    if (pageKey) params.set("pageKey", pageKey);
-    const data = await fetchJson<{ nftSales?: RawSale[]; pageKey?: string }>(
-      `${NFT_BASE()}/getNFTSales?${params}`
-    );
-    for (const s of data.nftSales ?? []) {
-      trades.push({
-        transactionHash: s.transactionHash ?? "",
-        marketplace: s.marketplace ?? "unknown",
-        tokenIds: s.tokenId != null ? [String(s.tokenId)] : [],
-        sellerAddress: s.sellerAddress ?? "",
-        buyerAddress: s.buyerAddress ?? "",
-        priceEth: salePriceEth(s),
-        blockNumber: Number(s.blockNumber ?? 0),
-      });
+
+  // Candidate sales = transfers that are not mints. Mints are getMintsSince()'s job; including them
+  // here would double-post.
+  const byTx = new Map<string, RawTransfer[]>();
+  for (const t of await getAllTransfers(contractAddress, fromBlock, head)) {
+    if (!t.hash) continue;
+    if ((t.from ?? "").toLowerCase() === ZERO) continue;
+    const list = byTx.get(t.hash);
+    if (list) list.push(t); else byTx.set(t.hash, [t]);
+  }
+
+  for (const [hash, list] of byTx) {
+    const receipt = await provider().getTransactionReceipt(hash);
+    if (!receipt) continue;
+
+    // Which marketplace filled it? No fill event -> not a sale (wallet-to-wallet / OTC).
+    let marketplace: string | undefined;
+    for (const log of receipt.logs) {
+      const m = FILL_TOPICS[log.topics[0]];
+      if (m) { marketplace = m; break; }
     }
-    pageKey = data.pageKey || undefined;
-  } while (pageKey);
+    if (!marketplace) continue;
+
+    // Price. ETH first; then WETH movement. Never guess — an undecidable price is labelled, not zeroed.
+    const tx = await provider().getTransaction(hash);
+    let priceEth = Number(ethers.formatEther(tx?.value ?? 0n));
+    let priceSource: Trade["priceSource"] = "tx.value";
+    if (priceEth === 0) {
+      let weth = 0n;
+      for (const log of receipt.logs) {
+        if (log.address.toLowerCase() === WETH_ADDRESS && log.topics[0] === ERC721_TRANSFER) {
+          try { weth += BigInt(log.data); } catch { /* non-standard data; ignore this leg */ }
+        }
+      }
+      if (weth > 0n) { priceEth = Number(ethers.formatEther(weth)); priceSource = "weth-logs"; }
+      else priceSource = "underivable";
+    }
+
+    // Seller/buyer/tokens from the collection's own Transfer logs in this tx, so a bundle keeps every id.
+    const nftLogs = receipt.logs.filter(
+      (l) => l.address.toLowerCase() === contractAddress.toLowerCase() &&
+             l.topics[0] === ERC721_TRANSFER && l.topics.length >= 4
+    );
+    const tokenIds = nftLogs.length
+      ? [...new Set(nftLogs.map((l) => String(BigInt(l.topics[3]))))]
+      : [...new Set(list.filter((t) => t.tokenId != null).map((t) => String(BigInt(t.tokenId!))))];
+
+    trades.push({
+      transactionHash: hash,
+      marketplace,
+      tokenIds,
+      sellerAddress: nftLogs.length ? ethers.getAddress("0x" + nftLogs[0].topics[1].slice(26)) : (list[0].from ?? ""),
+      buyerAddress:  nftLogs.length ? ethers.getAddress("0x" + nftLogs[nftLogs.length - 1].topics[2].slice(26)) : (list[list.length - 1].to ?? ""),
+      priceEth,
+      priceSource,
+      blockNumber: receipt.blockNumber,
+    });
+  }
+
   trades.sort((a, b) => a.blockNumber - b.blockNumber);
   return trades;
 }
@@ -192,7 +263,7 @@ export async function getMintsSince(contractAddress: string, fromBlock: number):
     if (!blockNumber && list[0].blockNum) blockNumber = parseInt(list[0].blockNum, 16);
     mints.push({
       transactionHash: hash, marketplace: "mint", tokenIds,
-      sellerAddress: "", buyerAddress: finalRecipient, priceEth, blockNumber,
+      sellerAddress: "", buyerAddress: finalRecipient, priceEth, priceSource: "tx.value", blockNumber,
     });
   }
   return mints;
