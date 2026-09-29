@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import express from "express";
 import path from "path";
-import { getCurrentBlock } from "./moralis";
+import { getCurrentBlock } from "./sources";
 import {
   ALL_MARKETPLACES,
   addCollection,

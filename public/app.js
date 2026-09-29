@@ -440,7 +440,7 @@ function setChip(id, health) {
 function renderConsole(d) {
   const { moralis, x, queue = [], queueCount = 0, events = [], lastPollAt, postedCount = 0, lastPostedAt } = d;
 
-  // Moralis
+  // Alchemy
   setChip("status-moralis", moralis.health);
   $("moralis-detail").textContent =
     moralis.health === "ok"
@@ -481,8 +481,8 @@ function renderConsole(d) {
   if (moralis.health === "down")
     ws.push(
       moralis.detail === "quota"
-        ? "⚠ Moralis quota exhausted — no new sales are being detected until it resets."
-        : "⚠ Moralis is failing — sale detection is paused."
+        ? "⚠ Alchemy quota exhausted — no new sales are being detected until it resets."
+        : "⚠ Alchemy is failing — sale detection is paused."
     );
   if (x.health === "down")
     ws.push(

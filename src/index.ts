@@ -5,7 +5,7 @@ import { startPoller } from "./poller";
 import { startServer } from "./server";
 
 const REQUIRED_ENV = [
-  "MORALIS_API_KEY",
+  "ALCHEMY_API_KEY",
   "X_CONSUMER_KEY",
   "X_CONSUMER_SECRET",
   "X_ACCESS_TOKEN",

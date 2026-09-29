@@ -1,5 +1,5 @@
 import { TwitterApi } from "twitter-api-v2";
-import { Trade, TokenMetadata, marketplaceLabel } from "./moralis";
+import { Trade, TokenMetadata, marketplaceLabel } from "./sources";
 import { Collection, isDryRun } from "./db";
 
 let client: TwitterApi | null = null;
@@ -42,6 +42,8 @@ export interface SaleGroup {
   marketplace: string;
   buyerAddress: string;
   sellerAddress: string;
+  /** True if ANY leg of this group had an underivable price — totalEth is then not trustworthy. */
+  priceUnderivable: boolean;
 }
 
 /** Merge trades sharing a transaction hash (sweeps) into single units. */
@@ -52,6 +54,7 @@ export function groupTradesByTx(trades: Trade[]): SaleGroup[] {
     if (existing) {
       existing.tokenIds.push(...trade.tokenIds);
       existing.totalEth += trade.priceEth;
+      if (trade.priceSource === "underivable") existing.priceUnderivable = true;
     } else {
       groups.set(trade.transactionHash, {
         txHash: trade.transactionHash,
@@ -60,6 +63,7 @@ export function groupTradesByTx(trades: Trade[]): SaleGroup[] {
         marketplace: trade.marketplace,
         buyerAddress: trade.buyerAddress,
         sellerAddress: trade.sellerAddress,
+        priceUnderivable: trade.priceSource === "underivable",
       });
     }
   }
